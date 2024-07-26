@@ -372,8 +372,12 @@ class Ridges():
         lw = 0.5  # line width
         alpha_p = 1
 
+        # this sets the 'front' polygon to have lower edge of zero,
+        # whereas other polygons have lower edge of ffval
         ff = np.zeros(self.y_sub.shape[0])
         ff[0:-1] = ffval
+
+        # make polygons
         polys = [polygon_under_graph(*zip(*c),
                                      fill=ff[i])
                  for i, c in enumerate(self.cleaned)]
@@ -412,27 +416,27 @@ class Ridges():
 
         self.ax.text(np.nanmin(self.x_sub),
                      np.nanmin(self.y_sub),
-                     np.nanmin(self.z_sub),
+                     0.05 * np.nanmax(self.z_sub[-1, :]),
                      '  by:tlohde', 'x',
                      ha='left',
-                     va='top',
+                     va='bottom',
                      fontsize=5,  # 'xx-small',
                      font='dejavu sans mono')
 
         self.ax.text(np.nanmax(self.x_sub),
                      np.nanmin(self.y_sub),
-                     np.nanmin(self.z_sub),
+                     0.05 * np.nanmax(self.z_sub[-1, :]),
                      'Copernicus Global Digital Elevation Model, ESA (2021)  ',
                      'x',
                      ha='right',
-                     va='top',
+                     va='bottom',
                      fontsize=5,  # 'xx-small',
                      font='dejavu sans mono')
 
 
-class FlowFeather():
+class Flow():
     '''
-    class for making feathery topography maps
+    class for making flowy topography maps
     input dem
     **kwargs:
         'step' - [in crs units] size of step to take between
@@ -441,14 +445,20 @@ class FlowFeather():
         cmap - colormap
         N - how many points to randomly seed
     '''
-    def __init__(self, dem, **kwargs):
+    def __init__(self,
+                 dem,
+                 **kwargs):
         self.dem = dem
         self.aspect = xrs.aspect(dem)
         self.slope = xrs.slope(dem)
 
+        self.epsg = self.dem.rio.crs.to_epsg()
+        self.prj = ccrs.epsg(self.epsg)
+
         self.N = kwargs.get('N', None)
         self.step = kwargs.get('step', int(1.5 * dem.rio.resolution()[0]))
         self.reps = kwargs.get('reps', 50)
+        self.gradient_threshold = kwargs.get('gradient_threshold', 5)
         self.cmap = plt.get_cmap(kwargs.get('cmap', 'twilight'))
 
         self.make_points()
@@ -493,14 +503,14 @@ class FlowFeather():
             _dx = xr.where((theta.isnull())
                            | (theta <= 0)
                            | (grad.isnull())
-                           | (grad < 5),
+                           | (grad < self.gradient_threshold),
                            np.nan,
                            step * np.sin(np.deg2rad(theta)))
 
             _dy = xr.where((theta.isnull())
                            | (theta <= 0)
                            | (grad.isnull())
-                           | (grad < 5),
+                           | (grad < self.gradient_threshold),
                            np.nan,
                            step * np.cos(np.deg2rad(theta)))
 
@@ -602,6 +612,17 @@ class FlowFeather():
         self.colors = colors
         self.alphas = alphas
 
+    def plot(self, ax, lw):
+        _lc = LineCollection(self.segments,
+                             linewidths=lw,
+                             colors=self.colors,
+                             alpha=self.alphas)
+
+        ax.add_collection(_lc)
+
+        ax.set(xlim=(self.dem.x.min(), self.dem.x.max()),
+               ylim=(self.dem.y.min(), self.dem.y.max()))
+
 
 class Tanaka():
     '''
@@ -636,6 +657,9 @@ class Tanaka():
         self.break_reclassify()
         self.generate_contours()
         self.style_lines()
+
+        self.epsg = self.dem.rio.crs.to_epsg()
+        self.prj = ccrs.epsg(self.epsg)
 
     def break_reclassify(self):
         '''
@@ -1090,7 +1114,7 @@ class LocalCmap():
                                             dims=self.img.dims,
                                             coords=self.img.coords)
 
-    def make_colormap(self, ax):
+    def make_colormap(self, ax, shrink=0.6):
         avg_boundary = list(self.region_color_dict.keys())
         avg_colors = list(self.region_color_dict.values())
         avg_cmap = ListedColormap(avg_colors)
@@ -1099,6 +1123,7 @@ class LocalCmap():
         self.cax = plt.colorbar(avg_sm,
                                 spacing='proportional',
                                 extend='both',
+                                shrink=shrink,
                                 ax=ax)
         self.cax.set_ticks(avg_boundary)
 
