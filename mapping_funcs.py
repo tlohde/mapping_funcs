@@ -19,6 +19,7 @@ import pystac_client
 from pystac.extensions.eo import EOExtension as eo
 from pyproj.database import query_utm_crs_info
 from pyproj.aoi import AreaOfInterest
+import pyproj
 import planetary_computer
 from rasterio.enums import Resampling
 import re
@@ -96,6 +97,37 @@ class Utils():
             )
         )
         return ccrs.epsg(_utms[0].code)
+    
+    def shapely_reprojector(geo: shapely.geometry,
+                            src_crs: int=3413,
+                            target_crs: int=4326):
+        
+        """
+        reproject shapely point (geo) from src_crs to target_crs
+        avoids having to create geopandas series to handle crs transformations
+        """
+
+        assert isinstance(geo,
+                          (shapely.geometry.polygon.Polygon,
+                           shapely.geometry.linestring.LineString,
+                           shapely.geometry.point.Point)
+                          ), 'geo must be shapely geometry'
+        
+        transformer = pyproj.Transformer.from_crs(
+            src_crs,
+            target_crs,
+            always_xy=True
+        )
+        
+        if isinstance(geo, shapely.geometry.point.Point):
+            _x, _y = geo.coords.xy
+            return shapely.Point(*transformer.transform(_x, _y))
+        elif isinstance(geo, shapely.geometry.linestring.LineString):
+            _x, _y = geo.coords.xy
+            return shapely.LineString(zip(*transformer.transform(_x, _y)))
+        elif isinstance(geo, shapely.geometry.polygon.Polygon):
+            _x, _y = geo.exterior.coords.xy
+            return shapely.Polygon(zip(*transformer.transform(_x, _y)))
 
     def bezier(ls: shapely.geometry.linestring.LineString,
                interval: tuple[float, int] = 100):
