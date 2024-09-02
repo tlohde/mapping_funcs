@@ -97,11 +97,11 @@ class Utils():
             )
         )
         return ccrs.epsg(_utms[0].code)
-    
+
     def shapely_reprojector(geo: shapely.geometry,
-                            src_crs: int=3413,
-                            target_crs: int=4326):
-        
+                            src_crs: int = 3413,
+                            target_crs: int = 4326):
+
         """
         reproject shapely point (geo) from src_crs to target_crs
         avoids having to create geopandas series to handle crs transformations
@@ -112,13 +112,13 @@ class Utils():
                            shapely.geometry.linestring.LineString,
                            shapely.geometry.point.Point)
                           ), 'geo must be shapely geometry'
-        
+
         transformer = pyproj.Transformer.from_crs(
             src_crs,
             target_crs,
             always_xy=True
         )
-        
+
         if isinstance(geo, shapely.geometry.point.Point):
             _x, _y = geo.coords.xy
             return shapely.Point(*transformer.transform(_x, _y))
@@ -275,31 +275,39 @@ class Ridges():
         self.smooth_dict = kwargs.get('smooth_dict', {'x': 5})
         self.step = kwargs.get('step', None)
         self.cmap = kwargs.get('cmap', None)
-        if self.cmap:
-            if isinstance(self.cmap,
-                          (ListedColormap,
-                           LinearSegmentedColormap)
-                          ):
-                pass
-                # self.cmap = self.cmap
-            elif isinstance(self.cmap, str):
-                self.cmap = plt.colormaps[self.cmap]
-            else:
-                print('reverting to default colormap')
-                self.cmap = plt.colormaps['Grays']
+        if isinstance(self.cmap,
+                      (ListedColormap,
+                       LinearSegmentedColormap)
+                      ):
+            pass
+        elif isinstance(self.cmap, str):
+            self.cmap = plt.colormaps[self.cmap]
         else:
-            self.cmap = plt.colormaps['YlGnBu_r']
+            print('reverting to default colormap')
+            self.cmap = plt.colormaps['Grays']
+
         self.figsize = kwargs.get('figsize', [10, 10])
+        self.annotate = kwargs.get('annotate', True)
         self.title = kwargs.get('title', None)
         self.vert_exag = kwargs.get('vert_exag', 0.15)
         self.fc = kwargs.get('fc', 'w')
+        self.ec = kwargs.get('ec', 'k')
+        self.lw = kwargs.get('lw', 0.5)
+        self.ffval = kwargs.get('ffval', -10)
+        self.alpha_p = kwargs.get('alpha_p', 1)
         self.textc = kwargs.get('textc', 'w')
         self.font = kwargs.get('font', 'dejavu sans mono')
 
         self.get_dem()
         self.smooth()
         self.transects()
-        self.plotter()
+        self.plotter(ec=self.ec,
+                     fc=self.fc,
+                     vert_exag=self.vert_exag,
+                     lw=self.lw,
+                     ffval=self.ffval,
+                     alpha_p=self.alpha_p,
+                     annotate=self.annotate)
 
     def get_dem(self):
         '''
@@ -321,10 +329,11 @@ class Ridges():
         self.X, self.Y = np.meshgrid(self.dem_smooth.x.data,
                                      self.dem_smooth.y.data)
 
-    def transects(self):
+    def transects(self, **kwargs):
         '''
         sample elevation along transects
         '''
+        
         def divide_at_nan(q):
             # for splitting transects at nan values
             groups = []
@@ -390,7 +399,15 @@ class Ridges():
             np.linspace(0, 1, len(self.y_sub))
             )
 
-    def plotter(self):
+    def plotter(self, **kwargs):
+
+        ec = kwargs.get('ec', self.ec)
+        fc = kwargs.get('fc', self.fc)
+        vert_exag = kwargs.get('vert_exag', self.vert_exag)
+        lw = kwargs.get('lw', self.lw)
+        ffval = kwargs.get('ffval', self.ffval)
+        alpha_p = kwargs.get('alpha_p', self.alpha_p)
+        annotate = kwargs.get('annotate', True)
 
         def polygon_under_graph(x, y, fill=0.):
             """
@@ -400,9 +417,9 @@ class Ridges():
             """
             return [(x[0], fill), *zip(x, y), (x[-1], fill)]
 
-        ffval = -10  # z coordinate of bottom polygon
-        lw = 0.5  # line width
-        alpha_p = 1
+        # ffval = -10  # z coordinate of bottom polygon
+        # lw = 0.5  # line width
+        # alpha_p = 1
 
         # this sets the 'front' polygon to have lower edge of zero,
         # whereas other polygons have lower edge of ffval
@@ -416,7 +433,7 @@ class Ridges():
         self.collection = PolyCollection(polys,
                                          facecolors=self.facecolors,
                                          alpha=alpha_p,
-                                         edgecolors='k',
+                                         edgecolors=ec,
                                          linewidths=lw)
 
         self.fig, self.ax = plt.subplots(figsize=self.figsize,
@@ -429,41 +446,44 @@ class Ridges():
         self.ax.set_ylim(np.nanmin(self.y_sub), np.nanmax(self.y_sub))
 
         # self.ax.set_axis_off()
-        self.ax.patch.set_facecolor(self.fc)
-        self.ax.yaxis.set_pane_color(self.fc)
-        self.ax.xaxis.set_pane_color(self.fc)
-        self.ax.zaxis.set_pane_color(self.fc)
-        self.fig.patch.set_facecolor(self.fc)
+        self.ax.patch.set_facecolor(fc)
+        self.ax.yaxis.set_pane_color(fc)
+        self.ax.xaxis.set_pane_color(fc)
+        self.ax.zaxis.set_pane_color(fc)
+        self.fig.patch.set_facecolor(fc)
         self.ax.grid(False)
-        self.ax.set_box_aspect([1, 1, self.vert_exag])
+        self.ax.set_box_aspect([1, 1, vert_exag])
         self.ax.view_init(elev=40, azim=270, roll=0)
 
-        self.ax.set_title(self.title,
-                          font=self.font,
-                          fontsize=40,  # 'xx-large',
-                          color=self.textc,
-                          loc='left',
-                          x=0.2,
-                          y=0.77)
+        if annotate:
+            self.ax.set_title(self.title,
+                              font=self.font,
+                              fontsize=40,  # 'xx-large',
+                              color=self.textc,
+                              loc='left',
+                              x=0.2,
+                              y=0.77)
 
-        self.ax.text(np.nanmin(self.x_sub),
-                     np.nanmin(self.y_sub),
-                     0.05 * np.nanmax(self.z_sub[-1, :]),
-                     '  by:tlohde', 'x',
-                     ha='left',
-                     va='bottom',
-                     fontsize=5,  # 'xx-small',
-                     font='dejavu sans mono')
+            self.ax.text(np.nanmin(self.x_sub),
+                         np.nanmin(self.y_sub),
+                         0.05 * np.nanmax(self.z_sub[-1, :]),
+                         '  by:tlohde', 'x',
+                         ha='left',
+                         va='bottom',
+                         fontsize=5,  # 'xx-small',
+                         font='dejavu sans mono')
 
-        self.ax.text(np.nanmax(self.x_sub),
-                     np.nanmin(self.y_sub),
-                     0.05 * np.nanmax(self.z_sub[-1, :]),
-                     'Copernicus Global Digital Elevation Model, ESA (2021)  ',
-                     'x',
-                     ha='right',
-                     va='bottom',
-                     fontsize=5,  # 'xx-small',
-                     font='dejavu sans mono')
+            self.ax.text(np.nanmax(self.x_sub),
+                         np.nanmin(self.y_sub),
+                         0.05 * np.nanmax(self.z_sub[-1, :]),
+                         'Copernicus Global Digital Elevation Model, ESA (2021)',
+                         'x',
+                         ha='right',
+                         va='bottom',
+                         fontsize=5,  # 'xx-small',
+                         font='dejavu sans mono')
+
+        self.ax.set_axis_off()
 
 
 class Flow():
