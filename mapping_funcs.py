@@ -333,7 +333,7 @@ class Ridges():
         '''
         sample elevation along transects
         '''
-        
+
         def divide_at_nan(q):
             # for splitting transects at nan values
             groups = []
@@ -476,7 +476,7 @@ class Ridges():
             self.ax.text(np.nanmax(self.x_sub),
                          np.nanmin(self.y_sub),
                          0.05 * np.nanmax(self.z_sub[-1, :]),
-                         'Copernicus Global Digital Elevation Model, ESA (2021)',
+                         'Copernicus Global DEM, ESA (2021)',
                          'x',
                          ha='right',
                          va='bottom',
@@ -515,7 +515,7 @@ class Flow():
 
         self.make_points()
         self.follow_aspect(step=self.step, reps=self.reps)
-        self.make_line_collection()
+        # self.make_line_collection()
 
     def make_points(self):
         '''
@@ -526,6 +526,21 @@ class Flow():
             self.N = int(np.multiply(*self.dem.shape) / 10)
         self.x = np.random.uniform(_minx, _maxx, self.N)
         self.y = np.random.uniform(_miny, _maxy, self.N)
+
+    def trim_and_validate(ls):
+        if ls is None:
+            pass
+        elif ls.is_valid:
+            return ls
+        else:
+            x, y = ls.coords.xy
+            nans = np.nonzero(~np.isnan(x) | ~np.isnan(y))[0]
+            x = [x[i] for i in nans]
+            y = [y[i] for i in nans]
+            if len(x) > 1:
+                return LineString(zip(x, y))
+            else:
+                pass
 
     def follow_aspect(self, step, reps):
         '''
@@ -576,41 +591,39 @@ class Flow():
             _xpoints = np.vstack([_xpoints, _x])
             _ypoints = np.vstack([_ypoints, _y])
 
+        # make linestrings
+        self.linestrings = [LineString(zip(
+            _xpoints[:, i], _ypoints[:, i]))
+            for i in range(_xpoints.shape[1])
+        ]
+# TODO FIX THIS HIDEOUS MESS
+# problem with 'None' linestrings and trim_and_validate returning None
+# so have to to list comprehension thing twice.
+        self.linestrings = [ls for ls in self.linestrings if ls is not None]
+        # ensure the are tidy, valid, and not too short
+        self.linestrings = [Flow.trim_and_validate(ls)
+                            for ls in self.linestrings]
+        self.linestrings = [ls for ls in self.linestrings if ls is not None]        
+        self.linestrings = [ls for ls in self.linestrings
+                            if (ls.is_valid) & (ls.length > self.step * 3)]
+
         # smooth the linestring
         self.smooth_linestrings = [
-            taubin_smooth(
-                LineString(
-                    zip(
-                        _xpoints[:, i], _ypoints[:, i]
-                    )
-                )
-            ) for i in range(_xpoints.shape[1])
+            taubin_smooth(ls) for ls in self.linestrings
         ]
 
-        for i, ls in enumerate(self.smooth_linestrings):
-            if ls.is_valid:
-                continue
-            else:
-                x, y = ls.coords.xy
-                z = np.nonzero(np.isnan(x))[0]
-                if (len(z) > 1) & (z[0] > 1):
-                    self.smooth_linestrings[i] = LineString(
-                        zip(
-                            x[0:z[0]], y[0:z[0]]
-                            )
-                        )
-
+        # ensure smoothed are tidy, valid and not too short
+        self.smooth_linestrings = [Flow.trim_and_validate(ls)
+                                   for ls in self.smooth_linestrings]
+        self.smooth_linestrings = [
+            ls for ls in self.smooth_linestrings if ls is not None
+            ]
         self.smooth_linestrings = [
             ls for ls in self.smooth_linestrings
-            if ls.is_valid
+            if (ls.is_valid) & (ls.length > self.step * 3)
             ]
 
-        self.smooth_linestrings = [
-            ls for ls in self.smooth_linestrings
-            if ls.length > self.step * 3
-            ]
-
-    def make_line_collection(self):
+    def make_line_collection(self, smoothed=True):
         def LineString_to_LineCollection(ls, lsb=60):
             _sgmnts = []
             _azis = []
@@ -652,7 +665,12 @@ class Flow():
         colors = []
         alphas = []
 
-        for _ls in self.smooth_linestrings:
+        if smoothed:
+            lines_to_use = self.smooth_linestrings
+        else:
+            lines_to_use = self.linestrings
+
+        for _ls in lines_to_use:
             seg, azi, clr, alp = LineString_to_LineCollection(_ls)
             segments += seg
             azimuths += azi
